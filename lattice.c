@@ -79,6 +79,82 @@ static const int DIR[12][3] = {
     { 1, 0,-1}, {-1, 0, 1}, { 0, 1,-1}, { 0,-1, 1},   /* below/above */
 };
 
+/* Task 4 */
+ 
+static int lattice_init(void)
+{
+    ID = malloc((size_t)N * sizeof *ID);
+    if (!ID) {
+        perror("malloc");
+        return -1;
+    }
+    for (int n = 0; n < N; n++)
+        ID[n] = n;
+    return 0;
+}
+ 
+static void lattice_free(void)
+{
+    free(ID);
+    ID = NULL;
+}
+
+static inline int neighbor(int n, int d)
+{
+    Coord c = coords(n);
+    Phys  p = to_phys(c.i, c.j, c.k);
+    int x = wrap(p.x + DIR[d][0], PX);
+    int y = wrap(p.y + DIR[d][1], PY);
+    int z = wrap(p.z + DIR[d][2], PZ);
+    Coord m = to_array(x, y, z);
+    return idx(m.i, m.j, m.k);
+}
+
+/* Task 5 */
+
+static long sum_kernel(const int *ID)
+{
+    long sum = 0;
+    for (int n = 0; n < N; n++)
+        sum += ID[n];
+    return sum;
+}
+
+/* Task 6 */
+
+static long sum_inner_k(const int *ID)
+{
+    long sum = 0;
+    for (int i = 0; i < W; i++)
+        for (int j = 0; j < H; j++)
+            for (int k = 0; k < D; k++) {
+                sum += ID[idx(i, j, k)];
+            }
+    return sum;
+}
+
+static long sum_inner_j(const int *ID)
+{
+    long sum = 0;
+    for (int i = 0; i < H; i++)
+        for (int k = 0; k < W; k++)
+            for (int j = 0; j < D; j++) {
+                sum += ID[idx(i, j, k)];
+            }
+    return sum;
+}
+
+static long sum_inner_i(const int *ID)
+{
+    long sum = 0;
+    for (int k = 0; k < D; k++)
+        for (int j = 0; j < H; j++)
+            for (int i = 0; i < W; i++) {
+                sum += ID[idx(i, j, k)];
+            }
+    return sum;
+}
+
 /*verification*/
 
 static int verify_index_mapping(void)
@@ -182,21 +258,18 @@ static int verify_neighbors(void)
         for (int d = 0; d < 12; d++) {
             nb[d] = neighbor(n, d);
  
-            /* valid index, and not the cell itself */
             if (nb[d] < 0 || nb[d] >= N || nb[d] == n) {
                 fprintf(stderr, "cell %d: bad neighbor %d in direction %d\n", n, nb[d], d);
                 errors++;
                 continue;
             }
  
-            /* symmetry: going back in the opposite direction returns to n */
             if (neighbor(nb[d], d ^ 1) != n) {
                 fprintf(stderr, "cell %d: direction %d not symmetric\n", n, d);
                 errors++;
             }
         }
  
-        /* the 12 neighbours must be distinct */
         for (int a = 0; a < 12; a++)
             for (int b = a + 1; b < 12; b++)
                 if (nb[a] == nb[b]) {
@@ -208,39 +281,6 @@ static int verify_neighbors(void)
  
     printf("neighbors:     %s (%d errors)\n", errors ? "FAILED" : "OK", errors);
     return errors;
-}
-
-
-/* Task 4 */
- 
-/* allocate the N cells in one contiguous block and set ID[n] = n */
-static int lattice_init(void)
-{
-    ID = malloc((size_t)N * sizeof *ID);
-    if (!ID) {
-        perror("malloc");
-        return -1;
-    }
-    for (int n = 0; n < N; n++)
-        ID[n] = n;
-    return 0;
-}
- 
-static void lattice_free(void)
-{
-    free(ID);
-    ID = NULL;
-}
-
-static inline int neighbor(int n, int d)
-{
-    Coord c = coords(n);
-    Phys  p = to_phys(c.i, c.j, c.k);
-    int x = wrap(p.x + DIR[d][0], PX);
-    int y = wrap(p.y + DIR[d][1], PY);
-    int z = wrap(p.z + DIR[d][2], PZ);
-    Coord m = to_array(x, y, z);
-    return idx(m.i, m.j, m.k);
 }
 
 
