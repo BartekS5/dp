@@ -3,7 +3,7 @@
 #include <assert.h>
 /*
 All W*H*D cells are stored in one contiguous array ID[0..N-1].
-k varies fastest, then j, then i: n = (i*H + j)*D + k = i·(H·D) + j·D + k
+k varies fastest, then j, then i: n = (i*H + j)*D + k = i*(H*D) + j*D + k
 Strides: k -> 1, j -> D, i -> H*D elements.
 */
 //atoms will be in places in the lattice where x + y + z is even
@@ -15,13 +15,15 @@ Strides: k -> 1, j -> D, i -> H*D elements.
 #define D 32
 #define N (W * H * D)
 
-static int *ID; 
+static int *lattice;
 
-typedef struct { int i, j, k; } Coord;
+typedef struct{
+    int i, j, k;
+} Coord;
 
 static inline int idx(int i, int j, int k)
 {
-    return (i * H + j) * D + k;
+    return i * (H * D) + j * D + k;
 }
 
 static inline Coord coords(int n)
@@ -55,7 +57,7 @@ static inline Coord coords(int n)
 typedef struct { int x, y, z; } Phys;
 
 /* array (i,j,k) -> physical (x,y,z) */
-static inline Phys to_phys(int i, int j, int k)
+inline Phys to_phys(int i, int j, int k)
 {
     Phys r;
     r.x = 2 * i + ((j + k) & 1);
@@ -64,16 +66,16 @@ static inline Phys to_phys(int i, int j, int k)
     return r;
 }
 
-static inline Coord to_array(int x, int y, int z)
+inline Coord to_array(int x, int y, int z)
 {
     assert(((x + y + z) & 1) == 0);
     Coord c = { x / 2, y, z };
     return c;
 }
 
-static inline int wrap(int v, int L) { return ((v % L) + L) % L; }
+inline int wrap(int v, int L) { return ((v % L) + L) % L; }
 
-static const int DIR[12][3] = {
+const int DIR[12][3] = {
     { 1, 1, 0}, {-1,-1, 0}, { 1,-1, 0}, {-1, 1, 0},   /* own layer   */
     { 1, 0, 1}, {-1, 0,-1}, { 0, 1, 1}, { 0,-1,-1},   /* above/below */
     { 1, 0,-1}, {-1, 0, 1}, { 0, 1,-1}, { 0,-1, 1},   /* below/above */
@@ -81,25 +83,25 @@ static const int DIR[12][3] = {
 
 /* Task 4 */
  
-static int lattice_init(void)
+int lattice_init(void)
 {
-    ID = malloc((size_t)N * sizeof *ID);
-    if (!ID) {
-        perror("malloc");
+    lattice = malloc((size_t)N * sizeof(*lattice));
+    if (!lattice) {
+        perror("malloc error");
         return -1;
     }
     for (int n = 0; n < N; n++)
-        ID[n] = n;
+        lattice[n] = n;
     return 0;
 }
  
-static void lattice_free(void)
+void lattice_free(void)
 {
-    free(ID);
-    ID = NULL;
+    free(lattice);
+    lattice = NULL;
 }
 
-static inline int neighbor(int n, int d)
+inline int neighbor(int n, int d)
 {
     Coord c = coords(n);
     Phys  p = to_phys(c.i, c.j, c.k);
@@ -112,52 +114,52 @@ static inline int neighbor(int n, int d)
 
 /* Task 5 */
 
-static long sum_kernel(const int *ID)
+long sum_kernel()
 {
     long sum = 0;
     for (int n = 0; n < N; n++)
-        sum += ID[n];
+        sum += lattice[n];
     return sum;
 }
 
 /* Task 6 */
 
-static long sum_inner_k(const int *ID)
+long sum_inner_k()
 {
     long sum = 0;
     for (int i = 0; i < W; i++)
         for (int j = 0; j < H; j++)
             for (int k = 0; k < D; k++) {
-                sum += ID[idx(i, j, k)];
+                sum += lattice[idx(i, j, k)];
             }
     return sum;
 }
 
-static long sum_inner_j(const int *ID)
+long sum_inner_j()
 {
     long sum = 0;
     for (int i = 0; i < H; i++)
         for (int k = 0; k < W; k++)
             for (int j = 0; j < D; j++) {
-                sum += ID[idx(i, j, k)];
+                sum += lattice[idx(i, j, k)];
             }
     return sum;
 }
 
-static long sum_inner_i(const int *ID)
+long sum_inner_i()
 {
     long sum = 0;
     for (int k = 0; k < D; k++)
         for (int j = 0; j < H; j++)
             for (int i = 0; i < W; i++) {
-                sum += ID[idx(i, j, k)];
+                sum += lattice[idx(i, j, k)];
             }
     return sum;
 }
 
 /*verification*/
 
-static int verify_index_mapping(void)
+int verify_index_mapping(void)
 {
     int errors = 0;
 
@@ -183,7 +185,7 @@ static int verify_index_mapping(void)
     return errors;
 }
 
-static int verify_embedding(void)
+int verify_embedding(void)
 {
     int errors = 0;
 
@@ -243,12 +245,12 @@ static int verify_embedding(void)
         }
     }
 
-    printf("embedding:     %s (%d errors)\n", errors ? "FAILED" : "OK", errors);
+    printf("embedding: %s (%d errors)\n", errors ? "FAILED" : "OK", errors);
     return errors;
 }
 
 
-static int verify_neighbors(void)
+int verify_neighbors(void)
 {
     int errors = 0;
  
@@ -273,8 +275,7 @@ static int verify_neighbors(void)
         for (int a = 0; a < 12; a++)
             for (int b = a + 1; b < 12; b++)
                 if (nb[a] == nb[b]) {
-                    fprintf(stderr, "cell %d: directions %d and %d give the same cell %d\n",
-                            n, a, b, nb[a]);
+                    fprintf(stderr, "cell %d: directions %d and %d give the same cell %d\n", n, a, b, nb[a]);
                     errors++;
                 }
     }
@@ -292,6 +293,12 @@ int main(void)
     errors += verify_index_mapping();
     errors += verify_embedding();
     errors += verify_neighbors();
+
+    long sum = sum_kernel(lattice);
+    long expected = (long)N * (N - 1) / 2;
+    printf("kernel sum: %ld (expected %ld) %s\n", sum, expected, sum == expected ? "OK" : "FAILED");
+    if (sum != expected)
+        errors++;
 
     lattice_free();
     return errors ? EXIT_FAILURE : EXIT_SUCCESS;
