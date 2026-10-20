@@ -1,32 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-/*
-All W*H*D cells are stored in one contiguous array ID[0..N-1].
-k varies fastest, then j, then i: n = (i*H + j)*D + k = i*(H*D) + j*D + k
-Strides: k -> 1, j -> D, i -> H*D elements.
-*/
-//atoms will be in places in the lattice where x + y + z is even
-//own layer(±1, ±1, 0)
-//layer above(±1, 0, +1), (0, ±1, +1)
-//layer below(±1, 0, −1), (0, ±1, −1)
-#define W 32
-#define H 32
-#define D 32
+#include <time.h>
+
+#define W 256
+#define H 256
+#define D 256
 #define N (W * H * D)
 
-static int *lattice;
+int *lattice;
 
 typedef struct{
     int i, j, k;
 } Coord;
 
-static inline int idx(int i, int j, int k)
+int idx(int i, int j, int k)
 {
     return i * (H * D) + j * D + k;
 }
 
-static inline Coord coords(int n)
+Coord coords(int n)
 {
     Coord c;
     c.k = n % D;
@@ -35,29 +28,16 @@ static inline Coord coords(int n)
     return c;
 }
 
-/* FCC embedding */
-/*
- * Physical coordinates are integers in units of a/2 (a = cubic lattice
- * constant). FCC sites are exactly the integer points with x+y+z even.
- * Each z-layer is a checkerboard: in every row (fixed y,z) the sites sit
- * at every second x, shifted by the parity p = (y+z) & 1.
- *
- *   array -> physical:  x = 2*i + ((j+k) & 1),  y = j,  z = k
- *   physical -> array:  i = x / 2,              j = y,  k = z
- *
- * Physical periodic box: PX x PY x PZ = 2W x H x D, containing exactly
- * W*H*D sites = N cells (bijection). H and D must be even so that
- * periodic wrapping preserves the parity of x+y+z.
- */
 #define PX (2 * W)
 #define PY H
 #define PZ D
 
 
-typedef struct { int x, y, z; } Phys;
+typedef struct{
+    int x, y, z;
+} Phys;
 
-/* array (i,j,k) -> physical (x,y,z) */
-inline Phys to_phys(int i, int j, int k)
+Phys to_phys(int i, int j, int k)
 {
     Phys r;
     r.x = 2 * i + ((j + k) & 1);
@@ -66,19 +46,19 @@ inline Phys to_phys(int i, int j, int k)
     return r;
 }
 
-inline Coord to_array(int x, int y, int z)
+Coord to_array(int x, int y, int z)
 {
     assert(((x + y + z) & 1) == 0);
     Coord c = { x / 2, y, z };
     return c;
 }
 
-inline int wrap(int v, int L) { return ((v % L) + L) % L; }
+int wrap(int v, int L) { return ((v % L) + L) % L; }
 
 const int DIR[12][3] = {
-    { 1, 1, 0}, {-1,-1, 0}, { 1,-1, 0}, {-1, 1, 0},   /* own layer   */
-    { 1, 0, 1}, {-1, 0,-1}, { 0, 1, 1}, { 0,-1,-1},   /* above/below */
-    { 1, 0,-1}, {-1, 0, 1}, { 0, 1,-1}, { 0,-1, 1},   /* below/above */
+    { 1, 1, 0}, {-1,-1, 0}, { 1,-1, 0}, {-1, 1, 0},
+    { 1, 0, 1}, {-1, 0,-1}, { 0, 1, 1}, { 0,-1,-1},
+    { 1, 0,-1}, {-1, 0, 1}, { 0, 1,-1}, { 0,-1, 1},
 };
 
 /* Task 4 */
@@ -101,7 +81,7 @@ void lattice_free(void)
     lattice = NULL;
 }
 
-inline int neighbor(int n, int d)
+int neighbor(int n, int d)
 {
     Coord c = coords(n);
     Phys  p = to_phys(c.i, c.j, c.k);
@@ -114,9 +94,9 @@ inline int neighbor(int n, int d)
 
 /* Task 5 */
 
-long sum_kernel()
+volatile long long sum_kernel()
 {
-    long sum = 0;
+    long long sum = 0;
     for (int n = 0; n < N; n++)
         sum += lattice[n];
     return sum;
@@ -124,36 +104,48 @@ long sum_kernel()
 
 /* Task 6 */
 
-long sum_inner_k()
+long long sum_inner_k()
 {
-    long sum = 0;
+    clock_t start = clock();
+    long long sum = 0;
     for (int i = 0; i < W; i++)
         for (int j = 0; j < H; j++)
             for (int k = 0; k < D; k++) {
                 sum += lattice[idx(i, j, k)];
             }
+    clock_t end = clock();
+    double elapsed_time = (double)(end - start) / CLOCKS_PER_SEC;
+    printf("sum_inner_k: %lld, elapsed time: %f s\n", sum, elapsed_time);
     return sum;
 }
 
-long sum_inner_j()
+long long sum_inner_j()
 {
-    long sum = 0;
+    clock_t start = clock();
+    long long sum = 0;
     for (int i = 0; i < H; i++)
         for (int k = 0; k < W; k++)
             for (int j = 0; j < D; j++) {
                 sum += lattice[idx(i, j, k)];
             }
+    clock_t end = clock();
+    double elapsed_time = (double)(end - start) / CLOCKS_PER_SEC;
+    printf("sum_inner_j: %lld, elapsed time: %f s\n", sum, elapsed_time);
     return sum;
 }
 
-long sum_inner_i()
+long long sum_inner_i()
 {
-    long sum = 0;
+    clock_t start = clock();
+    long long sum = 0;
     for (int k = 0; k < D; k++)
         for (int j = 0; j < H; j++)
             for (int i = 0; i < W; i++) {
                 sum += lattice[idx(i, j, k)];
             }
+    clock_t end = clock();
+    double elapsed_time = (double)(end - start) / CLOCKS_PER_SEC;
+    printf("sum_inner_i: %lld, elapsed time: %f s\n", sum, elapsed_time);
     return sum;
 }
 
@@ -189,10 +181,9 @@ int verify_embedding(void)
 {
     int errors = 0;
 
-    /*every cell -> a valid site in the box -> same cell */
     for (int n = 0; n < N; n++) {
         Coord c = coords(n);
-        Phys  p = to_phys(c.i, c.j, c.k);
+        Phys p = to_phys(c.i, c.j, c.k);
 
         if ((p.x + p.y + p.z) & 1) {
             fprintf(stderr, "cell %d maps to non-site (%d,%d,%d)\n", n, p.x, p.y, p.z);
@@ -211,7 +202,6 @@ int verify_embedding(void)
         }
     }
 
-    /*every site in the box -> a cell -> same site*/
     int sites = 0;
     for (int x = 0; x < PX; x++)
         for (int y = 0; y < PY; y++)
@@ -230,7 +220,6 @@ int verify_embedding(void)
         errors++;
     }
 
-    /* closure: every site + every NN vector, wrapped, is again a site */
     for (int n = 0; n < N; n++) {
         Coord c = coords(n);
         Phys  p = to_phys(c.i, c.j, c.k);
@@ -294,11 +283,15 @@ int main(void)
     errors += verify_embedding();
     errors += verify_neighbors();
 
-    long sum = sum_kernel(lattice);
-    long expected = (long)N * (N - 1) / 2;
-    printf("kernel sum: %ld (expected %ld) %s\n", sum, expected, sum == expected ? "OK" : "FAILED");
+    long long sum = sum_kernel();
+    long long expected = (long long)N * (N - 1) / 2;
+    printf("kernel sum: %lld (expected %lld) %s\n", sum, expected, sum == expected ? "OK" : "FAILED");
     if (sum != expected)
         errors++;
+
+    sum_inner_k();
+    sum_inner_j();
+    sum_inner_i();
 
     lattice_free();
     return errors ? EXIT_FAILURE : EXIT_SUCCESS;
