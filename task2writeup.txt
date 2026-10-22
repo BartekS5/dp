@@ -1,38 +1,82 @@
-Layout: k varies fastest. n = (i*H + j)*D + k,  W = H = D,
+1. Layout
+One flat int array of N = W*H*D cells, W = H = D.
+k varies fastest:  n = (i*H + j)*D + k
 
+2. Index mapping
+idx(i,j,k) = (i*H + j)*D + k
+coords(n):  k = n % D,  j = (n / D) % H,  i = n / (H*D)
+Tested both ways over the whole grid: idx(coords(n)) == n for every n,
+and coords(idx(i,j,k)) == (i,j,k) for every cell.
 
-Physical to array mapping (Task 3)
+3. Physical <-> array mapping
+Array -> physical:  x = i,  y = j,  z = 2k + ((i + j) & 1)
+Physical -> array:  i = x,  j = y,  k = z / 2
 
-The FCC lattice is the set of integer points (x, y, z) with x + y + z
-even, and half of the grid points are sites and the odd ones are holes.
-Its 12 nearest neighbours are defined as:
-const int DIR[12][3] = {
-    { 1, 1, 0}, {-1,-1, 0}, { 1,-1, 0}, {-1, 1, 0},
-    { 1, 0, 1}, {-1, 0, 1}, { 0, 1, 1}, { 0,-1, 1},
-    { 1, 0,-1}, {-1, 0,-1}, { 0, 1,-1}, { 0,-1,-1},
-};
+FCC sites are exactly the integer points (x,y,z) with x + y + z even. 
+So in each (x,y) column, only every other z is a site, 
+and which ones that are, depends on the parity of x + y:
+x + y even -> sites at z = 0, 2, 4, etc
+x + y odd -> sites at z = 1, 3, 5, etc
+A column of 2D physical z values holds exactly D sites. The
+array index k counts them. k = z / 2 drops the parity bit, which is
+not information because x + y already fixes it. That's why x and y map
+straight to i and j and only z is halved. The physical box is
+W x H x 2D and holds exactly W*H*D sites, one per cell.
 
-Why the mapping has this form:
-In any row of fixed (y, z), the sites are every second x:
-  y + z even  ->  x = 0, 2, 4, ...
-  y + z odd   ->  x = 1, 3, 5, ...
-So x carries one redundant bit, which parity is fixed by y + z.
-Dropping that bit packs the sites into a dense array with no holes:
+Every FCC direction has two
+components equal to +-1 and one equal to 0, so it changes x + y + z by
+an even amount (-2, 0 or +2). Parity is kept, so the neighbour is still a site. 
+Periodic wrapping is done modulo W, H and 2D, which are all
+even, so wrapping keeps parity too. The wrapped point is therefore a
+valid site inside the box, and k = z / 2 gives its cell.
 
-  physical to array: i = x / 2, j = y, k = z
-  array to physical: x = 2i + ((j + k) & 1), y = j, z = k
+Why the array offset is not constant: take direction (1,0,1).
+- from a cell with i + j even (z = 2k):   z+1 = 2k+1  -> k' = k
+- from a cell with i + j odd  (z = 2k+1): z+1 = 2k+2  -> k' = k+1
+Same physical step, different array step. So neighbor() goes through
+the physical coordinates instead of using a fixed offset table.
 
-Because only half the x positions are sites, the physical box is twice
-as long in x as the array:  PX = 2W, PY = H, PZ = D. 
-The box has 2N points and exactly N sites.
+4. Neighbours and tests
+neighbor(n,d): coords -> to_phys -> add DIR[d] -> wrap -> to_array -> idx.
+Tests (all pass, every cell, every direction):
+- DIR holds all 12 FCC vectors, each once; OPP[d] is the exact reverse.
+- each neighbour is a valid cell and not the cell itself
+- the physical step to the neighbour is exactly DIR[d] (mod the box)
+- symmetric: neighbor(neighbor(n,d), OPP[d]) == n
+- all 12 neighbours of a cell are distinct
 
+5-6. Kernel and timing
+Kernel: sum += lattice[idx(i,j,k)] over all cells, returns the sum.
 
-Timing table (Task 6)
-256x256x256
-Best of 10 runs.
-innermost   stride (elements)   stride (bytes)   -O0 (s)   -O2 (s)
-(a) k       1                   4                0.045     0.009
-(b) j       D   = 256           1 KB             0.044     0.023
-(c) i       H*D = 65536         256 KB           0.165     0.159
+Best of 10 runs on 256^3 grid:
+innermost   stride (elements)   best -O0 (s)   best -O2 (s)
+k           1                   0.048          0.0028
+j           D = 256             0.056          0.021
+i           H*D = 65536         0.133          0.105
 
-Ranking: 1.inner k, 2.inner j, 3.inner i
+7. Explanation
+Ranking: k (fastest) < j < i (slowest).
+
+A cache line is 64 bytes = 16 ints.
+- k innermost: consecutive addresses. Each line is loaded once and
+all 16 ints are used: N/16 = 1,048,576 line loads. The hardware
+prefetcher also sees the pattern and loads ahead.
+- j innermost: stride 1 KB, so every access hits a new line. The
+inner loop touches 256 lines (16 KB), which still fit in L1, so the
+next k reuses them. Few extra memory loads, but no sequential
+access, so less prefetching and no vectorization.
+- i innermost: stride 256 KB. The inner loop touches 256 lines that
+all fall into the same L1 cache sets and on 256 different pages
+(TLB misses). Each line is evicted before the next k comes back to
+it, so nearly every access is a miss: up to N = 16.8M line loads,
+16x more than the k order.
+
+A larger stride costs more because each loaded line gives fewer useful
+elements before it is evicted, and the prefetcher can't hide the delay.
+
+-O0 vs -O2: at -O0 the instruction overhead (function calls, asserts)
+dominates, so the orders are close (i is 2.8x slower than k). -O2
+removes that overhead and vectorizes the k loop (17x faster), so
+memory access dominates and the gap grows to about 38x. The i order
+barely improves (1.3x) because it is limited by cache misses, not by
+instructions.
