@@ -28,7 +28,7 @@ The box has 2N points and exactly N sites.
 
 
 Timing table (Task 6)
-
+256x256x256
 Best of 10 runs.
 innermost   stride (elements)   stride (bytes)   -O0 (s)   -O2 (s)
 (a) k       1                   4                0.045     0.009
