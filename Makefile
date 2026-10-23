@@ -1,8 +1,9 @@
 CC = gcc
 CFLAGS = -O2 -Wall
 
-lattice: lattice.c
-	$(CC) $(CFLAGS) -o lattice lattice.c
+run:
+	$(CC) $(CFLAGS) lattice.c -o lattice
+	./lattice
 
 clean:
 	rm -f lattice

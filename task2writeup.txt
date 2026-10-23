@@ -48,9 +48,9 @@ Kernel: sum += lattice[idx(i,j,k)] over all cells, returns the sum.
 
 Best of 10 runs on 256^3 grid:
 innermost   stride (elements)   best -O0 (s)   best -O2 (s)
-k           1                   0.048          0.0028
-j           D = 256             0.056          0.021
-i           H*D = 65536         0.133          0.105
+k           1                   0.048          0.035
+j           D = 256             0.056          0.036
+i           H*D = 65536         0.133          0.215
 
 7. Explanation
 Ranking: k (fastest) < j < i (slowest).
