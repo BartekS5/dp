@@ -23,25 +23,23 @@ not information because x + y already fixes it. That's why x and y map
 straight to i and j and only z is halved. The physical box is
 W x H x 2D and holds exactly W*H*D sites, one per cell.
 
-Every FCC direction has two
-components equal to +-1 and one equal to 0, so it changes x + y + z by
+Every FCC direction has two components equal to +-1 and one equal to 0, so it changes x + y + z by
 an even amount (-2, 0 or +2). Parity is kept, so the neighbour is still a site. 
-Periodic wrapping is done modulo W, H and 2D, which are all
-even, so wrapping keeps parity too. The wrapped point is therefore a
+Periodic wrapping is done with modulo, and when W, H, D are all
+even, wrapping keeps parity too. The wrapped point is therefore a
 valid site inside the box, and k = z / 2 gives its cell.
 
 Why the array offset is not constant: take direction (1,0,1).
-- from a cell with i + j even (z = 2k):   z+1 = 2k+1  -> k' = k
-- from a cell with i + j odd  (z = 2k+1): z+1 = 2k+2  -> k' = k+1
+- from a cell with i + j even (z = 2k): z+1 = 2k+1 -> k' = k
+- from a cell with i + j odd (z = 2k+1): z+1 = 2k+2 -> k' = k+1
 Same physical step, different array step. So neighbor() goes through
 the physical coordinates instead of using a fixed offset table.
 
 4. Neighbours and tests
 neighbor(n,d): coords -> to_phys -> add DIR[d] -> wrap -> to_array -> idx.
-Tests (all pass, every cell, every direction):
+Tests (every cell, every direction):
 - DIR holds all 12 FCC vectors, each once; OPP[d] is the exact reverse.
 - each neighbour is a valid cell and not the cell itself
-- the physical step to the neighbour is exactly DIR[d] (mod the box)
 - symmetric: neighbor(neighbor(n,d), OPP[d]) == n
 - all 12 neighbours of a cell are distinct
 
@@ -58,7 +56,7 @@ i           H*D = 65536         0.133          0.105
 Ranking: k (fastest) < j < i (slowest).
 
 A cache line is 64 bytes = 16 ints.
-- k innermost: consecutive addresses. Each line is loaded once and
+- k innermost: these are consecutive addresses. Each line is loaded once and
 all 16 ints are used: N/16 = 1,048,576 line loads. The hardware
 prefetcher also sees the pattern and loads ahead.
 - j innermost: stride 1 KB, so every access hits a new line. The
@@ -66,10 +64,8 @@ inner loop touches 256 lines (16 KB), which still fit in L1, so the
 next k reuses them. Few extra memory loads, but no sequential
 access, so less prefetching and no vectorization.
 - i innermost: stride 256 KB. The inner loop touches 256 lines that
-all fall into the same L1 cache sets and on 256 different pages
-(TLB misses). Each line is evicted before the next k comes back to
-it, so nearly every access is a miss: up to N = 16.8M line loads,
-16x more than the k order.
+all fall into the same L1 cache sets and on 256 different pages. 
+Nearly every access is a miss.
 
 A larger stride costs more because each loaded line gives fewer useful
 elements before it is evicted, and the prefetcher can't hide the delay.
